@@ -205,10 +205,18 @@ def extract_clean_text(content):
     return str(content)
 
 def generate_draft(data):
-    inst_fin = "AI 보완 및 윤문 적용하여 내용 확장" if data['ai_fin'] else "입력된 텍스트 내용의 의미와 수치를 절대 변경하지 말고 그대로 슬라이드 텍스트로 배치할 것"
-    inst_int = "AI 보완 및 윤문 적용하여 내용 확장" if data['ai_int'] else "입력된 텍스트 내용을 변경하지 말고 그대로 슬라이드 텍스트로 배치할 것"
-    inst_insight = "AI 보완 및 윤문 적용하여 내용 확장" if data['ai_ins'] else "입력된 텍스트 내용을 변경하지 말고 그대로 배치할 것"
-    inst_news = "AI 보완 및 윤문 적용하여 내용 확장" if data['ai_news_chk'] else "입력된 텍스트 내용을 변경하지 말고 그대로 배치할 것"
+    # AI 보완 여부 텍스트
+    def get_ai_inst(flag):
+        return "AI 보완 적용하여 내용 확장" if flag else "텍스트 내용의 의미와 수치를 절대 변경하지 말고 그대로 배치할 것"
+    
+    # 슬라이드 지정 장수 텍스트
+    def get_cnt_inst(cnt):
+        return f"반드시 {cnt}장의 슬라이드로 분할하여 구성할 것" if cnt else "내용량에 맞춰 AI가 자율적으로 적절한 수의 슬라이드로 분할할 것"
+
+    inst_fin = f"[보완] {get_ai_inst(data['ai_fin'])} / [분량] {get_cnt_inst(data['cnt_fin'])}"
+    inst_int = f"[보완] {get_ai_inst(data['ai_int'])} / [분량] {get_cnt_inst(data['cnt_int'])}"
+    inst_insight = f"[보완] {get_ai_inst(data['ai_ins'])} / [분량] {get_cnt_inst(data['cnt_ins'])}"
+    inst_news = f"[보완] {get_ai_inst(data['ai_news_chk'])} / [분량] {get_cnt_inst(data['cnt_news'])}"
 
     prompt = f"""
     당신은 사내 소식지 "expl'AI'n telink: 텔링크를 말하다."의 전문 편집장입니다.
@@ -216,47 +224,52 @@ def generate_draft(data):
     
     [🚨 필수 규칙 및 금지 사항]
     1. 브랜드명 고정: "expl'AI'n telink"는 반드시 소문자 바탕에 'AI'만 대문자로 표기하세요.
-    2. 부가 설명 금지: 사용자에게 "이 내용을 복사해서 사용하세요"라거나 인사말 등의 불필요한 대화형 문구는 절대 출력하지 마세요. 오직 스크립트 내용만 출력해야 합니다.
-    3. 형식: 화려한 마크다운 서식이나 표를 만들지 말고, 각 페이지별로 들어갈 '핵심 텍스트'만 간결하게 구분해서 작성하세요.
+    2. 명칭 통일: 모든 단위는 '페이지'가 아닌 '슬라이드'로 통일하세요.
+    3. 순차적 번호 부여 (절대 규칙): 슬라이드 번호는 반드시 1부터 시작하는 순차적인 '숫자'로만 작성하세요. (알파벳 A, B, X, Y 등은 절대 사용 금지). 사용자가 지정한 분량에 따라 슬라이드 장수가 늘어나면 3, 4, 5... 순서대로 번호를 계속 올리세요.
+    4. 부가 설명 금지: 사용자에게 안내하는 문구나 인사말은 절대 출력하지 마세요.
+    5. 형식: 화려한 마크다운 서식이나 표를 만들지 말고, 핵심 텍스트만 간결하게 작성하세요.
 
     [입력 정보 및 개별 지침]
     - 발행월: {data['month']}
-    - 사내 실적: {data['financial']} (지침: {inst_fin})
-    - 사내 주요 소식: {data['internal']} (지침: {inst_int})
-    - AI Insight (방향성 및 첨부파일 문서 내용): {data['ai_insight']} (지침: {inst_insight})
-    - AI 뉴스: {data['ai_news']} (지침: {inst_news})
+    - 사내 실적: {data['financial']} 
+      (지침: {inst_fin})
+    - 사내 주요 소식: {data['internal']} 
+      (지침: {inst_int})
+    - AI Insight (방향성 및 참고 자료): {data['ai_insight']} 
+      (지침: {inst_insight})
+    - AI 뉴스: {data['ai_news']} 
+      (지침: {inst_news})
 
     [출력 양식]
-    페이지 1. 표지
+    ※ 아래 항목들을 순서대로 배치하되, 번호는 반드시 끊기지 않는 순차적 숫자(1, 2, 3, 4, 5...)로 매기세요.
+
+    슬라이드 1. 표지
     - 제목: expl'AI'n telink: 텔링크를 말하다. - {data['month']}
     - 안내 문구: ※ 이 문서는 AI 및 자동화 솔루션으로 제작 되었습니다.
-    - 목차: 사내 소식 / AI Insight / 기타 소식
+    - 목차: 사내 소식 / AI Insight / AI 뉴스
 
-    페이지 2. 간지
+    슬라이드 2. 간지 (사내 소식)
     - 텍스트: 사내 소식 (재무성과 및 사내 주요 소식)
 
-    페이지 3. 재무성과
-    - (위 지침에 맞춰 실적 텍스트 작성)
-    ※ 숫자를 강조하고 숫자 텍스트 크기를 다른 텍스트 크기보다 크게 표기, 필요 시 실적과 연관된 이미지 또는 아이콘 추가
+    슬라이드 3. 재무성과 (※ 지침에 따라 분할 시 슬라이드 4, 5...로 계속 이어서 번호 부여)
+    - (실적 텍스트 작성)
+    ※ 숫자를 강조하고 크기를 크게 표기, 연관된 이미지 추가
 
-    페이지 4. 사내 주요 소식
-    - (위 지침에 맞춰 실적 텍스트 작성)
-    ※ 해당 페이지는 각 본부별로 꾸밀 수 있는 내용과 연상되는 연관된 이미지 또는 아이콘 추가
+    슬라이드 [이전 번호에 이어서]. 사내 주요 소식
+    - (텍스트 작성)
+    ※ 본부별 내용과 연관된 이미지 또는 아이콘 추가
     
-    페이지 5. 간지
+    슬라이드 [이전 번호에 이어서]. 간지 (AI Insight)
     - 텍스트: AI Insight
 
-    페이지 6~X. AI Insight 본문
-    - (위 지침에 맞춰 내용 작성, 필요시 여러 페이지로 분할)
+    슬라이드 [이전 번호에 이어서]. AI Insight 본문
+    - (텍스트 작성)
 
-    페이지 X+1. 간지
-    - 텍스트: 기타 AI 소식
+    슬라이드 [이전 번호에 이어서]. 간지 (AI 뉴스)
+    - 텍스트: AI 뉴스
 
-    페이지 X+2. AI 뉴스
-    - (위 지침에 맞춰 내용 작성)
-
-    페이지 X+3.
-    - 티저 이미지 기획안 내용
+    슬라이드 [이전 번호에 이어서]. AI 뉴스
+    - (텍스트 작성)
     """
     
     res = smart_llm.invoke(prompt)
@@ -264,32 +277,56 @@ def generate_draft(data):
 
 def generate_teaser(ai_insight, ai_news, internal):
     prompt = f"""
-    사내 소식지 "expl'AI'n telink"의 티저 이미지 기획안을 작성해 주세요. 
+    사내 소식지 "expl'AI'n telink"의 티저(표지 또는 하이라이트) 슬라이드 기획안을 작성해 주세요. 
     
     [🚨 필수 조건 및 금지 사항]
-    1. 표(Table) 작성 금지: 절대로 마크다운 표(|) 기호를 사용하지 말고, 깔끔한 줄글과 글머리 기호(•)로만 작성하세요. 텍스트를 너무 많이 담지 마세요.
-    2. 레이아웃 비중 (매우 중요):
-       - [메인 영역 - 70~80%]: 'AI Insight' 내용 중 가장 핵심적인 자극적인 카피 1~2개와 시각적 묘사 하나만 크게 제안하세요.
-       - [서브 영역 - 20~30%]: 'AI 뉴스'와 '사내 주요 소식'은 아주 조그맣게 들어갑니다. 구체적인 내용은 다 빼고, 시선을 끄는 간단한 이모티콘 1개와 짧은 단어 수준의 핵심 텍스트(각 1~2줄)로만 극도로 요약하세요.
-    3. 부가 설명 금지: 사용자에게 안내하는 문구나 인사말은 절대 넣지 마세요.
+    1. 표(Table) 작성 금지: 절대로 마크다운 표(|) 기호를 사용하지 말고, 깔끔한 줄글과 글머리 기호(•)로만 작성하세요.
+    2. 기계적인 영역 구분 탈피: 화면 비율을 강제로 나누지 마세요.
+    3. 디자인 일관성 엄수 (매우 중요): 이 티저 슬라이드의 디자인 톤앤매너는 사용자가 추후 적용할 '본문 메인 테마'를 100% 따릅니다. 따라서 뜬금없는 아트 스타일(예: 사이버펑크, 수채화, 3D 등)을 자의적으로 제안하지 마세요.
+    4. 핵심 목표 (관심 유발): 사내 구성원들의 시선을 사로잡을 수 있도록, '구도(레이아웃)'와 '후킹 카피'에만 집중해서 기획하세요.
+    5. 부가 설명 금지: 사용자에게 안내하는 문구나 인사말은 절대 넣지 마세요.
 
     [참고 데이터]
-    - AI Insight: {ai_insight[:500]}
-    - AI 뉴스: {ai_news[:300]}
-    - 사내 주요 소식: {internal[:300]}
+    - AI Insight (메인 주제): {ai_insight[:500]}
+    - AI 뉴스 & 사내 주요 소식 (서브 주제): {ai_news[:300]} / {internal[:300]}
 
     [출력 양식 예시]
-    ■ 메인 타이틀
-    - 비주얼: [메인 배경 또는 그래픽 설명]
-    - 메인 카피: "[강렬하고 짧은 한 줄 카피]"
+    ■ 티저 비주얼 연출 (※ 메인 테마 스타일 유지)
+    - 전체적인 구도 및 강조할 핵심 오브젝트 배치 설명 (예: 중앙에 핵심 주제를 암시하는 거대한 아이콘을 배치하고, 그 주변으로 서브 키워드들이 연결되는 방사형 구도)
 
-    ■ 중앙 메인 영역 (AI Insight)
-    - 비주얼 요소: [간단한 시각 요소 설명]
-    - 카피: [1~2줄의 짧은 카피]
+    ■ 핵심 후킹 카피 (Headline)
+    - "[구성원의 클릭을 유도하는 강렬하고 흥미로운 한 줄 카피]"
 
-    ■ 하단 서브 영역 (사내 소식 & AI 뉴스)
-    - 사내 소식: [이모티콘] [아주 짧은 핵심 단어/문구 1줄]
-    - AI 뉴스: [이모티콘] [아주 짧은 핵심 단어/문구 1줄]
+    ■ 주요 하이라이트 (시각화 포인트)
+    - [시각 요소]: (관련 서브 주제나 뉴스 요약 1줄)
+    - [시각 요소]: (관련 서브 주제나 뉴스 요약 1줄)
+    """
+    res = fast_llm.invoke(prompt)
+    return extract_clean_text(res.content)
+
+def regenerate_teaser_from_draft(draft_text):
+    prompt = f"""
+    사내 소식지 "expl'AI'n telink"의 작성된 전체 스크립트를 바탕으로 티저 슬라이드 기획안을 새로 구상해 주세요. 
+    
+    [🚨 필수 조건 및 금지 사항]
+    1. 표(Table) 작성 금지: 절대로 마크다운 표(|) 기호를 사용하지 마세요.
+    2. 디자인 일관성 엄수 (매우 중요): 티저의 시각적 스타일은 본문 슬라이드의 메인 테마를 무조건 따릅니다. 새로운 아트 스타일을 창조하지 말고 '구도와 오브젝트 배치'만 기획하세요.
+    3. 핵심 목표 (관심 유발): 아래 스크립트 내용 중 가장 흥미로운 포인트를 뽑아내어, 구성원들이 반드시 본문을 읽어보고 싶게 만드는 후킹(Hooking) 요소에 집중하세요.
+    4. 부가 설명 금지: 안내하는 문구나 인사말은 절대 넣지 마세요.
+
+    [참고 스크립트(Outline)]
+    {draft_text[:4000]}
+
+    [출력 양식 예시]
+    ■ 티저 비주얼 연출 (※ 메인 테마 스타일 유지)
+    - 전체적인 화면 구도 및 강조할 오브젝트 설명
+
+    ■ 핵심 후킹 카피 (Headline)
+    - "[구성원의 시선을 사로잡는 강렬한 한 줄 카피]"
+
+    ■ 주요 하이라이트 (시각화 포인트)
+    - [아이콘/비주얼 요소]: (스크립트에서 발췌한 흥미로운 내용 1줄)
+    - [아이콘/비주얼 요소]: (스크립트에서 발췌한 흥미로운 내용 1줄)
     """
     res = fast_llm.invoke(prompt)
     return extract_clean_text(res.content)
@@ -369,38 +406,91 @@ st.title("📰 expl'AI'n telink 자동화 Agent")
 if st.session_state.step == 1:
     st.subheader("📝 Step 1. 이번 달 expl'AI'n telink 데이터 입력")
     
+    # 파일 업로더 CSS (유지)
+    st.markdown("""
+        <style>
+        [data-testid="stFileUploader"] section {
+            padding: 10px;
+        }
+        [data-testid="stFileUploader"] {
+            min-height: 50px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     now = datetime.now()
     default_month_str = f"{now.year}년 {now.month}월호"
     
     with st.form("input_form"):
         month = st.text_input("발행 월 (예: 2026년 3월호)", value=default_month_str)
+        st.divider()
         
-        st.markdown("##### 📊 사내 실적 & AI Insight")
+        # 🚨 [수정] 'AI 자율'을 리스트의 맨 앞으로 옮김
+        slide_options = ["AI 자율"] + [f"{i}장" for i in range(1, 11)]
+        
+        # --- 상단 (Row 1): 텔링크 사내 소식 ---
+        st.markdown("#### 🏢 텔링크 사내 소식")
         row1_col1, row1_col2 = st.columns(2)
+        
         with row1_col1:
             financial = st.text_area("1. 사내 실적 (매출/영업이익 등)", height=150)
-            ai_fin = st.checkbox("이 항목에 AI 보완 적용하기", key="chk_fin", value=False)
-            
+            c1, c2 = st.columns([1, 1])
+            with c1: 
+                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                ai_fin = st.checkbox("✨ AI 보완", key="chk_fin", value=False)
+            with c2: 
+                # 🚨 순서가 바뀌었으므로 "1장"은 index 1이 됩니다.
+                sel_fin = st.selectbox("슬라이드 배분", slide_options, index=1, key="sel_fin")
+                
         with row1_col2:
-            ai_insight = st.text_area("3. AI Insight (핵심 요청사항이나 방향성을 입력)", height=100)
-            uploaded_files = st.file_uploader("📂 AI Insight 참고 자료 첨부", type=["pdf", "docx", "pptx", "xlsx"], accept_multiple_files=True)
-            ai_ins = st.checkbox("이 항목에 AI 보완 적용하기", key="chk_ins", value=True)
-
-        st.markdown("---")
-        st.markdown("##### 📰 사내 주요 소식 & AI 뉴스")
-        row2_col1, row2_col2 = st.columns(2)
-        with row2_col1:
             internal = st.text_area("2. 사내 주요 소식", height=150)
-            ai_int = st.checkbox("이 항목에 AI 보완 적용하기", key="chk_int", value=False)
+            c3, c4 = st.columns([1, 1])
+            with c3: 
+                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                ai_int = st.checkbox("✨ AI 보완", key="chk_int", value=False)
+            with c4: 
+                # 🚨 기본값 "1장" (index 1)
+                sel_int = st.selectbox("슬라이드 배분", slide_options, index=1, key="sel_int")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # --- 중단 (Row 2): AI 인사이트 & 뉴스 ---
+        st.markdown("#### 🤖 AI 인사이트 & 뉴스")
+        row2_col1, row2_col2 = st.columns(2)
+        
+        with row2_col1:
+            ai_insight = st.text_area("3. AI Insight (핵심 요청사항이나 방향성을 입력)", height=150)
+            c5, c6 = st.columns([1, 1])
+            with c5: 
+                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                ai_ins = st.checkbox("✨ AI 보완", key="chk_ins", value=True)
+            with c6: 
+                # 🚨 기본값 "3장" (index 3)
+                sel_ins = st.selectbox("슬라이드 배분", slide_options, index=3, key="sel_ins")
 
         with row2_col2:
             ai_news = st.text_area("4. AI 뉴스", height=150)
-            ai_news_chk = st.checkbox("이 항목에 AI 보완 적용하기", key="chk_news", value=True)
-            
+            c7, c8 = st.columns([1, 1])
+            with c7: 
+                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                ai_news_chk = st.checkbox("✨ AI 보완", key="chk_news", value=True)
+            with c8: 
+                # 🚨 기본값 "1장" (index 1)
+                sel_news = st.selectbox("슬라이드 배분", slide_options, index=1, key="sel_news")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # --- 하단 (Row 3): 파일 업로더 ---
+        st.markdown("##### 📂 AI Insight 참고 자료 첨부 (선택 사항)")
+        uploaded_files = st.file_uploader("기획에 참고할 문서(PDF, Word, PPT, Excel)를 자유롭게 업로드하세요.", type=["pdf", "docx", "pptx", "xlsx"], accept_multiple_files=True)
+        
+        st.markdown("---")
         submit = st.form_submit_button("🚀 초안 및 디자인 추천 생성하기", use_container_width=True)
         
+        # 폼 제출 로직
         if submit:
-            if not month: st.warning("발행 월을 입력해주세요!")
+            if not month: 
+                st.warning("발행 월을 입력해주세요!")
             else:
                 with st.spinner("첨부파일을 분석하고 초안과 맞춤형 PPT 디자인 테마를 기획 중입니다..."):
                     extracted_text = ""
@@ -411,9 +501,17 @@ if st.session_state.step == 1:
                     
                     combined_ai_insight = f"사용자 방향성: {ai_insight}\n\n[참고 문서 내용]\n{extracted_text}" if extracted_text else ai_insight
                     
-                    data = {"month": month, "financial": financial, "ai_fin": ai_fin, 
-                            "internal": internal, "ai_int": ai_int, "ai_insight": combined_ai_insight, 
-                            "ai_ins": ai_ins, "ai_news": ai_news, "ai_news_chk": ai_news_chk}
+                    # 선택된 문자열("3장", "AI 자율" 등)을 내부 로직용 숫자나 None으로 변환
+                    def parse_slide_cnt(val):
+                        return None if val == "AI 자율" else int(val.replace("장", ""))
+                    
+                    data = {
+                        "month": month, 
+                        "financial": financial, "ai_fin": ai_fin, "cnt_fin": parse_slide_cnt(sel_fin),
+                        "internal": internal, "ai_int": ai_int, "cnt_int": parse_slide_cnt(sel_int),
+                        "ai_insight": combined_ai_insight, "ai_ins": ai_ins, "cnt_ins": parse_slide_cnt(sel_ins),
+                        "ai_news": ai_news, "ai_news_chk": ai_news_chk, "cnt_news": parse_slide_cnt(sel_news)
+                    }
                     
                     st.session_state.draft_content = generate_draft(data)
                     st.session_state.teaser_content = generate_teaser(combined_ai_insight, ai_news, internal)
@@ -435,8 +533,18 @@ elif st.session_state.step == 2:
         edited_draft = st.text_area("초안 내용", value=st.session_state.draft_content, height=450, label_visibility="collapsed")
         
     with col_teaser:
-        st.markdown("### 🎨 1페이지 티저 기획안")
-        edited_teaser = st.text_area("티저 내용", value=st.session_state.teaser_content, height=450, label_visibility="collapsed")
+            # 🚨 추가: 상단을 두 칸으로 나누어 제목과 버튼을 나란히 배치
+            t_col1, t_col2 = st.columns([2, 1])
+            with t_col1:
+                st.markdown("### 🎨 티저 기획안")
+            with t_col2:
+                if st.button("🔄 새로 구상", use_container_width=True):
+                    with st.spinner("수정된 스크립트로 다시 구상 중..."):
+                        # 🚨 추가: 직접 수정한 edited_draft를 기반으로 다시 생성
+                        st.session_state.teaser_content = regenerate_teaser_from_draft(edited_draft)
+                        st.rerun()
+                        
+            edited_teaser = st.text_area("티저 내용", value=st.session_state.teaser_content, height=400, label_visibility="collapsed")
     
     st.markdown("---")
     st.markdown("#### 🤖 AI에게 추가 수정 요청하기 (선택 사항)")
@@ -466,9 +574,22 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     st.subheader("🎉 Step 3. 최종 디자인 및 PPT 생성")
     
-    # 🚨 [수정] 최종 텍스트를 세션에 저장하여 수정 가능하도록 만듭니다.
+    # 🚨 [수정] '페이지' 대신 '슬라이드' 번호를 찾고 +1을 해줍니다.
     if "final_full_text" not in st.session_state:
-        st.session_state.final_full_text = f"{st.session_state.draft_content}\n\n[티저 기획안]\n{st.session_state.teaser_content}"
+        draft_text = st.session_state.draft_content
+        
+        # '슬라이드 1', '슬라이드 8' 등에 있는 숫자만 모두 추출
+        slide_numbers = re.findall(r'슬라이드\s*(\d+)', draft_text)
+        
+        if slide_numbers:
+            last_slide = max(map(int, slide_numbers))
+            next_slide = last_slide + 1
+        else:
+            next_slide = 99 # 번호를 못 찾을 경우 예비값
+        
+        # 툴들이 인식하기 쉽게 슬라이드 N. 포맷으로 티저 삽입
+        teaser_title = f"\n\n==================================================\n슬라이드 {next_slide}. 티저 슬라이드 기획안 (표지/하이라이트용)\n==================================================\n"
+        st.session_state.final_full_text = f"{draft_text}{teaser_title}{st.session_state.teaser_content}"
         
     report_title = f"expl'AI'n telink - {st.session_state.month_title}"
     
@@ -486,7 +607,6 @@ elif st.session_state.step == 3:
     if prompts:
         st.write("💡 **마음에 드는 테마를 클릭하거나, 직접 테마를 입력해 슬라이드 제작에 적용하세요!**")
         
-        # 🚨 [수정] 추천 테마 개수 + 직접 입력 버튼 1개를 더해 컬럼 생성
         cols = st.columns(min(len(prompts) + 1, 4)) 
         
         for i, prompt_text in enumerate(prompts[:3]):
@@ -495,7 +615,6 @@ elif st.session_state.step == 3:
                     st.session_state.selected_manus_style = prompt_text.strip()
                     st.rerun()
                     
-        # 🚨 [추가] 4번째 버튼: 직접 입력 모드
         with cols[-1]:
             if st.button("✍️ 테마 직접 입력하기", type="primary", use_container_width=True):
                 st.session_state.selected_manus_style = "" # 텍스트 박스 초기화
@@ -509,7 +628,6 @@ elif st.session_state.step == 3:
         st.write("📂 **1. 텍스트 내보내기 및 최종 편집**")
         st.info("아래 텍스트 박스에서 내용을 최종 수정한 후, 전체 복사(Ctrl+A, Ctrl+C)하여 붙여넣으세요. 수정한 내용은 PDF와 Manus 제작에 자동 반영됩니다.")
         
-        # 🚨 [수정] st.code 대신 st.text_area를 사용하여 편집 가능하게 변경
         edited_final_text = st.text_area(
             "최종 스크립트 수정", 
             value=st.session_state.final_full_text, 
@@ -517,14 +635,15 @@ elif st.session_state.step == 3:
             label_visibility="collapsed"
         )
         
-        # 사용자가 수정한 내용을 세션에 덮어쓰기
         st.session_state.final_full_text = edited_final_text
         
-        # 다운로드되는 PDF도 수정된 텍스트 기반으로 굽기
         pdf_bytes, safe_name = create_professional_pdf(edited_final_text, report_title)
         st.download_button("📩 수정된 대본 PDF 다운로드", data=pdf_bytes, file_name=f"{safe_name}.pdf", use_container_width=True)
         
         if st.button("🔄 이전 단계로 돌아가기", use_container_width=True):
+            # 이전 단계로 돌아갈 때 텍스트를 비워둬야 다시 넘어올 때 페이지 번호를 새로 계산함
+            if "final_full_text" in st.session_state:
+                del st.session_state["final_full_text"]
             st.session_state.step = 2; st.rerun()
             
     with col2:
@@ -553,7 +672,6 @@ elif st.session_state.step == 3:
                 st.button("⏳ 슬라이드 제작 중... 잠시만 기다려주세요", disabled=True, use_container_width=True)
                 
                 with st.status("📊 Manus 에이전트 가동 중...", expanded=True) as status:
-                    # 🚨 Manus 제작 시에도 원본이 아닌 '수정된 텍스트(edited_final_text)'를 넘깁니다.
                     url, msg = create_manus_infographic(report_title, edited_final_text, style_input)
                     if url:
                         st.session_state.manus_url = url
