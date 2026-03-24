@@ -2,11 +2,18 @@
 .streamlit/
 secrets.toml
 
-# Python 환경 파일
+# Python 환경 및 가상환경 (점 있는 것과 없는 것 모두 차단)
+.venv/
+venv/
+ENV/
+env/
+bin/
+lib/
 __pycache__/
 *.py[cod]
-venv/
+*.pkl
 .env
 
-# OS 생성 파일
+# OS 및 기타 설정 파일
 .DS_Store
+.vscode/
