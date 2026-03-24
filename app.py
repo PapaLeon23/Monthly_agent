@@ -154,34 +154,30 @@ def create_professional_pdf(text, title):
     pdf = FPDF()
     pdf.add_page()
     
-    # 폰트 경로 설정 (현재 폴더의 나눔스퀘어 또는 윈도우 기본 맑은 고딕)
-    eb_font = "NanumSquareEB.ttf"
-    r_font = "NanumSquareR.ttf"
-    windows_malgun = "C:/Windows/Fonts/malgun.ttf"
+    # 🚨 [수정] 현재 폴더 경로를 명확히 해서 리눅스 서버에서도 파일을 찾게 함
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 폰트 파일명을 변수에 담되, 실제 경로는 절대 경로로 결합
+    eb_font = os.path.join(current_dir, "NanumSquareEB.ttf")
+    r_font = os.path.join(current_dir, "NanumSquareR.ttf")
     
     # 제목용 폰트 로드
     if os.path.exists(eb_font):
         pdf.add_font('NS_EB', '', eb_font)
         t_f = 'NS_EB'
-    elif os.path.exists(windows_malgun):
-        pdf.add_font('Malgun', '', windows_malgun)
-        t_f = 'Malgun'
     else:
+        # 서버에는 윈도우 폰트가 없으므로 맑은고딕 체크 대신 바로 기본 폰트로 우회
         t_f = 'Helvetica'
         
     # 본문용 폰트 로드
     if os.path.exists(r_font):
         pdf.add_font('NS_R', '', r_font)
         b_f = 'NS_R'
-    elif os.path.exists(windows_malgun):
-        # 이미 로드된 맑은 고딕 재사용
-        if t_f != 'Malgun':
-            pdf.add_font('Malgun', '', windows_malgun)
-        b_f = 'Malgun'
     else:
         b_f = 'Helvetica'
     
-    # fpdf2는 UTF-8을 완벽 지원하므로 텍스트 인코딩 꼼수가 필요 없습니다.
+    # 텍스트 전처리
     clean_title = title
     clean_text = text.replace('#', '').replace('*', '')
     
@@ -195,8 +191,14 @@ def create_professional_pdf(text, title):
     pdf.set_font(b_f, size=11)
     pdf.multi_cell(0, 8, txt=clean_text)
     
-    # PDF를 바이트 형태로 반환
-    return bytes(pdf.output()), re.sub(r'[\\/*?:"<>|]', "", clean_title)
+    # 🚨 [수정] bytes(pdf.output()) 대신 바로 output() 호출 (fpdf2 최신 방식)
+    # 만약 에러가 지속되면 bytes(pdf.output(dest='S')) 로 시도해보세요.
+    pdf_bytes = pdf.output()
+    if isinstance(pdf_bytes, str): # 구버전 대응
+        pdf_bytes = pdf_bytes.encode('latin-1')
+
+    import re
+    return pdf_bytes, re.sub(r'[\\/*?:"<>|]', "", clean_title)
 
 # --- 4. 에이전트 프롬프트 로직 ---
 def extract_clean_text(content):
