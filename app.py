@@ -14,6 +14,7 @@ from datetime import datetime
 from fpdf import FPDF
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # ==========================================
 # 🚨 [추가된 코드] 사내 네트워크 SSL 인증서 에러 해결 🚨
@@ -86,10 +87,10 @@ def create_manus_infographic(topic, report_content, style_instruction):
     headers = {"API_KEY": MANUS_API_KEY, "Content-Type": "application/json"}
     
     enhanced_prompt = f"""
+    반드시 적은 스타일대로 슬라이드를 생성하고 이 스타일을 벗어나서는 안돼. 
+    페이지별로 어떤 정보가 들어가야 하는지도 적어 놨으니 이를 참고해서 슬라이드를 구상하고 생성해줘. 
+    슬라이드 내 텍스트는 너무 길지 않아야 하고 핵심 내용 중심으로 작성해줘. 특히 간지 페이지에는 절대로 임의로 내용을 추가해서는 안돼.
     시각적으로 돋보이는 16:9 비율의 전문적인 인포그래픽 프레젠테이션을 만들어주세요. 
-
-    [🚨 필수 텍스트 표기 규칙]
-    - 브랜드명 고정: 소식지 이름인 "expl'AI'n telink"는 반드시 소문자 바탕에 'AI'만 대문자로 표기해야 합니다.
 
     [디자인 가이드라인]
     ※ 가이드 라인은 절대로 수정하지 말고 그대로 반영
@@ -99,8 +100,12 @@ def create_manus_infographic(topic, report_content, style_instruction):
     4. 세련된 레이아웃: 여백을 충분히 두고, 가독성이 좋은 폰트를 사용하여 매거진이나 테크 행사 발표 자료처럼 세련되고 깔끔한 느낌을 연출해 주세요.
     5. 아래 디자인 스타일대로만 슬라이드를 작성하고 절대 디자인 스타일을 벗어나지 말아주세요.
 
-    주요 내용: {topic}
-    디자인 스타일: {style_instruction}, 자연스러운 인포그래픽, 깔끔한 시각화
+    [디자인 스타일]
+    {style_instruction}
+
+    [🚨 필수 텍스트 표기 규칙]
+    - 브랜드명 고정: 소식지 이름인 "expl'AI'n telink"는 반드시 소문자 바탕에 'AI'만 대문자로 표기해야 합니다.
+
     본문 내용:
     {report_content[:4000]}
     """
@@ -119,33 +124,31 @@ def create_manus_infographic(topic, report_content, style_instruction):
             
         res_json = response.json()
         task_id = res_json.get("task_id")
-        task_url = res_json.get("task_url") # 🚨 추가: Manus 작업방 URL 확보
+        task_url = res_json.get("task_url") 
         
         if not task_id: return None, "Task ID를 발급받지 못했습니다."
 
-        with st.status("📊 Manus 디자인 제작 중...", expanded=True):
-            for _ in range(60):
-                time.sleep(10)
-                res = requests.get(f"{url}/{task_id}", headers={"API_KEY": MANUS_API_KEY}, verify=False).json()
+        st.write("⏳ Manus 서버에서 디자인을 생성하고 있습니다. (최대 10분 소요)")
+        
+        for _ in range(60):
+            time.sleep(10)
+            res = requests.get(f"{url}/{task_id}", headers={"API_KEY": MANUS_API_KEY}, verify=False).json()
+            
+            if res.get("status") == "completed":
+                files = res.get("files", [])
+                pptx_url = next((f.get('url') for f in files if isinstance(f, dict) and f.get('filename', '').endswith('.pptx')), None)
+                share_url = res.get("share_url")
                 
-                if res.get("status") == "completed":
-                    files = res.get("files", [])
-                    pptx_url = next((f.get('url') for f in files if isinstance(f, dict) and f.get('filename', '').endswith('.pptx')), None)
-                    share_url = res.get("share_url")
-                    
-                    # 🚨 1순위: 파일 직접 다운로드, 2순위: 공유 링크, 3순위: 해당 작업의 Manus 대시보드
-                    final_url = pptx_url or share_url or task_url
-                    
-                    if final_url: 
-                        return final_url, "성공"
-                    else: 
-                        # 모든 링크가 없더라도 기본 Manus 홈페이지로 유도
-                        return "https://manus.ai", "완료 (Manus 홈페이지에서 확인하세요)"
+                final_url = pptx_url or share_url or task_url
                 
-                elif res.get("status") in ["failed", "error"]:
-                    return None, f"Manus API 내부 오류: {res.get('error', '알 수 없는 오류')}"
-                    
-        # 시간 초과 시에도 에러를 뱉지 않고 Manus 링크 제공
+                if final_url: 
+                    return final_url, "성공"
+                else: 
+                    return "https://manus.ai", "완료 (Manus 홈페이지에서 확인하세요)"
+            
+            elif res.get("status") in ["failed", "error"]:
+                return None, f"Manus API 내부 오류: {res.get('error', '알 수 없는 오류')}"
+                
         return task_url or "https://manus.ai", "제작 시간이 길어지고 있습니다. Manus에서 확인하세요."
     except Exception as e: 
         return None, f"시스템 오류: {str(e)}"
@@ -154,48 +157,38 @@ def create_professional_pdf(text, title):
     pdf = FPDF()
     pdf.add_page()
     
-    # 🚨 [수정] 현재 폴더 경로를 명확히 해서 리눅스 서버에서도 파일을 찾게 함
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # 폰트 파일명을 변수에 담되, 실제 경로는 절대 경로로 결합
     eb_font = os.path.join(current_dir, "NanumSquareEB.ttf")
     r_font = os.path.join(current_dir, "NanumSquareR.ttf")
     
-    # 제목용 폰트 로드
+    # 🚨 [수정 1] 폰트 에러 방지를 위해 fname= 파라미터를 정확히 명시
     if os.path.exists(eb_font):
-        pdf.add_font('NS_EB', '', eb_font)
+        pdf.add_font('NS_EB', style='', fname=eb_font)
         t_f = 'NS_EB'
     else:
-        # 서버에는 윈도우 폰트가 없으므로 맑은고딕 체크 대신 바로 기본 폰트로 우회
         t_f = 'Helvetica'
         
-    # 본문용 폰트 로드
     if os.path.exists(r_font):
-        pdf.add_font('NS_R', '', r_font)
+        pdf.add_font('NS_R', style='', fname=r_font)
         b_f = 'NS_R'
     else:
         b_f = 'Helvetica'
     
-    # 텍스트 전처리
     clean_title = title
     clean_text = text.replace('#', '').replace('*', '')
     
-    # 제목 작성
     pdf.set_font(t_f, size=20)
     pdf.cell(0, 15, txt=clean_title, ln=1, align='L')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(10)
     
-    # 본문 작성
     pdf.set_font(b_f, size=11)
     pdf.multi_cell(0, 8, txt=clean_text)
     
-    # 🚨 [수정] bytes(pdf.output()) 대신 바로 output() 호출 (fpdf2 최신 방식)
-    # 만약 에러가 지속되면 bytes(pdf.output(dest='S')) 로 시도해보세요.
-    pdf_bytes = pdf.output()
-    if isinstance(pdf_bytes, str): # 구버전 대응
-        pdf_bytes = pdf_bytes.encode('latin-1')
+    # 🚨 [수정 2] 스트림릿 다운로드 에러(bytearray)를 막기 위해 bytes()로 감싸기
+    pdf_bytes = bytes(pdf.output())
 
     import re
     return pdf_bytes, re.sub(r'[\\/*?:"<>|]', "", clean_title)
@@ -277,61 +270,81 @@ def generate_draft(data):
     res = smart_llm.invoke(prompt)
     return extract_clean_text(res.content)
 
-def generate_teaser(ai_insight, ai_news, internal):
-    prompt = f"""
-    사내 소식지 "expl'AI'n telink"의 티저(표지 또는 하이라이트) 슬라이드 기획안을 작성해 주세요. 
-    
-    [🚨 필수 조건 및 금지 사항]
-    1. 표(Table) 작성 금지: 절대로 마크다운 표(|) 기호를 사용하지 말고, 깔끔한 줄글과 글머리 기호(•)로만 작성하세요.
-    2. 기계적인 영역 구분 탈피: 화면 비율을 강제로 나누지 마세요.
-    3. 디자인 일관성 엄수 (매우 중요): 이 티저 슬라이드의 디자인 톤앤매너는 사용자가 추후 적용할 '본문 메인 테마'를 100% 따릅니다. 따라서 뜬금없는 아트 스타일(예: 사이버펑크, 수채화, 3D 등)을 자의적으로 제안하지 마세요.
-    4. 핵심 목표 (관심 유발): 사내 구성원들의 시선을 사로잡을 수 있도록, '구도(레이아웃)'와 '후킹 카피'에만 집중해서 기획하세요.
-    5. 부가 설명 금지: 사용자에게 안내하는 문구나 인사말은 절대 넣지 마세요.
+def generate_teaser(data):
+    month = data.get("month", "이번 달")
+    internal_summary = data.get("internal", "이번 달 사내 소식 없음")
+    ai_insight_summary = data.get("ai_insight", "이번 달 AI 인사이트 없음")
+    ai_news_summary = data.get("ai_news", "이번 달 AI 뉴스 없음")
+    financial_summary = data.get("financial", "실적 데이터 없음")
 
-    [참고 데이터]
-    - AI Insight (메인 주제): {ai_insight[:500]}
-    - AI 뉴스 & 사내 주요 소식 (서브 주제): {ai_news[:300]} / {internal[:300]}
+    # 🚨 [수정] 티저 기획 원칙에 '구도 중심', 'AI 비중 80% 이상', '테마 제안 금지'를 명시했습니다.
+    system_prompt = """
+    당신은 'expl'AI'n telink' 사내 소식지의 크리에이티브 디렉터입니다.
+    당신의 임무는 구성원들의 호기심을 자극할 티저 이미지의 [전체적인 화면 구도와 오브젝트 배치]만을 기획하는 것입니다.
 
-    [출력 양식 예시]
-    ■ 티저 비주얼 연출 (※ 메인 테마 스타일 유지)
-    - 전체적인 구도 및 강조할 핵심 오브젝트 배치 설명 (예: 중앙에 핵심 주제를 암시하는 거대한 아이콘을 배치하고, 그 주변으로 서브 키워드들이 연결되는 방사형 구도)
-
-    ■ 핵심 후킹 카피 (Headline)
-    - "[구성원의 클릭을 유도하는 강렬하고 흥미로운 한 줄 카피]"
-
-    ■ 주요 하이라이트 (시각화 포인트)
-    - [시각 요소]: (관련 서브 주제나 뉴스 요약 1줄)
-    - [시각 요소]: (관련 서브 주제나 뉴스 요약 1줄)
+    [티저 기획 4대 원칙 - 엄수]
+    1. 스타일 제안 금지: 뒤에서 디자인 테마가 별도로 결정되므로 "수채화풍, 3D, 사이버펑크" 같은 아트 스타일이나 테마는 절대 지정하지 마세요. 오직 '어떤 피사체가 어디에 있는지' 구도만 묘사합니다.
+    2. AI 압도적 비중 (80% 이상): 이미지의 메인 피사체와 전체적인 흐름은 무조건 'AI Insight'와 'AI 뉴스'가 주도해야 합니다. 화면 중앙을 꽉 채우는 거대한 메인 메타포로 설정하세요.
+    3. 배경 처리 (20% 미만): '사내 실적'과 '사내 소식'은 메인 AI 피사체 주변을 맴도는 작은 아이콘, 희미한 배경 그래픽, 떠다니는 단어 조각 등 아주 작은 '거드는 수준'으로만 배치하세요.
+    4. 캠페인 제안 금지: "앞으로 무엇을 하자"는 식의 문구나 묘사는 금지합니다.
     """
-    res = fast_llm.invoke(prompt)
-    return extract_clean_text(res.content)
+
+    user_prompt = f"""
+    [이번 달 소식지 핵심 데이터: {month}]
+
+    1. 🤖 AI Insight (메인 테마 - 비중 80%):
+    {ai_insight_summary[:400]}...
+
+    2. 🌍 AI 뉴스 (메인 서포트):
+    {ai_news_summary[:300]}...
+
+    3. 🏢 사내 주요 소식 및 실적 (배경 요소 - 비중 20%):
+    - 실적: {financial_summary[:200]}...
+    - 소식: {internal_summary[:200]}...
+
+    위 내용을 바탕으로 {month} 호기심 자극용 티저 화면의 [구도와 오브젝트 배치안]을 기획해 주세요. 메타포(은유)를 활용하되, 비율 불균형(AI 중심)을 반드시 지켜주세요.
+    """
+
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        res = smart_llm.invoke(messages)
+        teaser_concept = res.content
+    except Exception as e:
+        teaser_concept = f"🚨 티저 컨셉 생성 중 오류가 발생했습니다: {e}"
+
+    return teaser_concept
 
 def regenerate_teaser_from_draft(draft_text):
+    # 🚨 [수정] 재생성 시에도 AI 중심의 비중과 스타일 제안 금지 규칙을 동일하게 적용합니다.
     prompt = f"""
-    사내 소식지 "expl'AI'n telink"의 작성된 전체 스크립트를 바탕으로 티저 슬라이드 기획안을 새로 구상해 주세요. 
+    사내 소식지 "expl'AI'n telink"의 작성된 전체 스크립트를 바탕으로 티저 기획안을 새로 구상해 주세요. 
     
     [🚨 필수 조건 및 금지 사항]
-    1. 표(Table) 작성 금지: 절대로 마크다운 표(|) 기호를 사용하지 마세요.
-    2. 디자인 일관성 엄수 (매우 중요): 티저의 시각적 스타일은 본문 슬라이드의 메인 테마를 무조건 따릅니다. 새로운 아트 스타일을 창조하지 말고 '구도와 오브젝트 배치'만 기획하세요.
-    3. 핵심 목표 (관심 유발): 아래 스크립트 내용 중 가장 흥미로운 포인트를 뽑아내어, 구성원들이 반드시 본문을 읽어보고 싶게 만드는 후킹(Hooking) 요소에 집중하세요.
-    4. 부가 설명 금지: 안내하는 문구나 인사말은 절대 넣지 마세요.
+    1. 스타일 제안 금지: 특정 디자인 테마나 화풍을 지정하지 마세요. 오직 화면의 '전체적인 구도'와 '오브젝트 배치'만 기획합니다.
+    2. AI 압도적 비중: 스크립트 중 'AI Insight'와 'AI 뉴스' 내용이 화면의 80% 이상을 차지하는 거대한 메인 피사체가 되어야 합니다.
+    3. 보조 요소 배경화: 사내 실적이나 다른 소식들은 메인 피사체 주변의 작은 아이콘, 그래픽 조각 등으로 아주 미미하게 거들도록만 배치하세요.
+    4. 표(Table) 작성 금지 / 인사말 금지
 
     [참고 스크립트(Outline)]
     {draft_text[:4000]}
 
     [출력 양식 예시]
-    ■ 티저 비주얼 연출 (※ 메인 테마 스타일 유지)
-    - 전체적인 화면 구도 및 강조할 오브젝트 설명
+    ■ 티저 비주얼 구도 기획 (※ 테마 지정 금지)
+    - 메인 피사체 (AI Insight 중심): [설명]
+    - 보조/배경 요소 (사내소식/실적 중심): [설명]
 
     ■ 핵심 후킹 카피 (Headline)
     - "[구성원의 시선을 사로잡는 강렬한 한 줄 카피]"
-
-    ■ 주요 하이라이트 (시각화 포인트)
-    - [아이콘/비주얼 요소]: (스크립트에서 발췌한 흥미로운 내용 1줄)
-    - [아이콘/비주얼 요소]: (스크립트에서 발췌한 흥미로운 내용 1줄)
     """
-    res = fast_llm.invoke(prompt)
-    return extract_clean_text(res.content)
+    
+    try:
+        res = fast_llm.invoke(prompt)
+        return extract_clean_text(res.content)
+    except Exception as e:
+        return f"🚨 티저 재구상 중 오류 발생: {e}"
 
 def revise_draft(current_draft, feedback):
     prompt = f"다음 초안을 사용자 피드백에 맞게 수정하되, PPT 스크립트(Outline) 형태의 간결한 구조는 반드시 유지해.\n\n[초안]\n{current_draft}\n\n[피드백]\n{feedback}"
@@ -489,24 +502,29 @@ if st.session_state.step == 1:
         st.markdown("---")
         submit = st.form_submit_button("🚀 초안 및 디자인 추천 생성하기", use_container_width=True)
         
-        # 폼 제출 로직
+# 폼 제출 로직
         if submit:
             if not month: 
                 st.warning("발행 월을 입력해주세요!")
             else:
                 with st.spinner("첨부파일을 분석하고 초안과 맞춤형 PPT 디자인 테마를 기획 중입니다..."):
+                    
+                    # 🚨 [여기서부터 복구!] 첨부파일에서 텍스트를 뽑아내는 로직입니다.
                     extracted_text = ""
                     if uploaded_files:
                         for file in uploaded_files:
                             extracted_text += f"\n--- [{file.name}] 내용 ---\n"
                             extracted_text += extract_text_from_file(file)
+                    # 🚨 [여기까지]
                     
+                    # 이제 extracted_text가 정의되었으므로 에러가 나지 않습니다.
                     combined_ai_insight = f"사용자 방향성: {ai_insight}\n\n[참고 문서 내용]\n{extracted_text}" if extracted_text else ai_insight
                     
-                    # 선택된 문자열("3장", "AI 자율" 등)을 내부 로직용 숫자나 None으로 변환
+                    # 선택된 문자열을 숫자나 None으로 변환하는 함수
                     def parse_slide_cnt(val):
                         return None if val == "AI 자율" else int(val.replace("장", ""))
                     
+                    # data 딕셔너리 완성
                     data = {
                         "month": month, 
                         "financial": financial, "ai_fin": ai_fin, "cnt_fin": parse_slide_cnt(sel_fin),
@@ -515,9 +533,11 @@ if st.session_state.step == 1:
                         "ai_news": ai_news, "ai_news_chk": ai_news_chk, "cnt_news": parse_slide_cnt(sel_news)
                     }
                     
+                    # 초안 생성
                     st.session_state.draft_content = generate_draft(data)
-                    st.session_state.teaser_content = generate_teaser(combined_ai_insight, ai_news, internal)
+                    st.session_state.teaser_content = generate_teaser(data) 
                     st.session_state.design_recommendation = get_design_recommendation(month, combined_ai_insight)
+                    
                     st.session_state.month_title = month
                     st.session_state.step = 2
                     st.rerun()
@@ -656,7 +676,10 @@ elif st.session_state.step == 3:
         if "manus_url" not in st.session_state:
             st.session_state.manus_url = None
 
-        with st.expander("📊 Manus 인포그래픽 슬라이드 제작", expanded=True):
+        # 🚨 [수정] st.expander 대신 st.container를 사용하여 중첩 에러를 방지합니다.
+        with st.container(border=True):
+            st.markdown("#### 📊 Manus 인포그래픽 슬라이드 제작")
+            
             style_input = st.text_area(
                 "디자인 테마 (버튼으로 선택하거나 직접 입력하세요)", 
                 value=st.session_state.selected_manus_style,
@@ -673,6 +696,7 @@ elif st.session_state.step == 3:
             elif st.session_state.manus_status == "processing":
                 st.button("⏳ 슬라이드 제작 중... 잠시만 기다려주세요", disabled=True, use_container_width=True)
                 
+                # 이제 컨테이너 안에 있으므로 st.status가 에러 없이 잘 작동합니다!
                 with st.status("📊 Manus 에이전트 가동 중...", expanded=True) as status:
                     url, msg = create_manus_infographic(report_title, edited_final_text, style_input)
                     if url:
